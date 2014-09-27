@@ -13,6 +13,8 @@ column.types <- c('factor', #have to correct that later
             'integer',
             'integer')
 
+#test
+
 train.raw <- read.csv("train.csv",colClasses = column.types)
 
 #Convert the datetime into real datetime (german locale)
