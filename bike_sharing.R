@@ -13,7 +13,8 @@ column.types <- c('factor', #have to correct that later
             'integer',
             'integer')
 
-#test
+#test1
+#abc 123 ssh test
 
 train.raw <- read.csv("train.csv",colClasses = column.types)
 
