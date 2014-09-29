@@ -14,6 +14,7 @@ column.types <- c('factor', #have to correct that later
             'integer')
 
 #test
+#test2
 
 train.raw <- read.csv("train.csv",colClasses = column.types)
 
