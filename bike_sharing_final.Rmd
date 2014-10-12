@@ -1,0 +1,182 @@
+---
+title: "Bike Sharing"
+author: "Stefan Buchholz"
+date: "Sunday, October 12, 2014"
+output: html_document
+---
+
+Bike Sharing Stuff
+
+## Read in the data
+Firstly we load all the training and test data into its variables.
+
+```{r read in the data}
+# declare column types
+train.columntypes <- c('factor', #have to correct that later
+            'factor',
+            'factor',
+            'factor',
+            'factor',
+            'numeric',
+            'numeric',
+            'integer',
+            'numeric',
+            'integer',
+            'integer',
+            'integer')
+
+test.columntypes <- c('factor', #this time its 3 columns less than in training dataset
+                  'factor',
+                  'factor',
+                  'factor',
+                  'factor',
+                  'numeric',
+                  'numeric',
+                  'integer',
+                  'numeric')
+
+train.raw <- read.csv("train.csv",colClasses = train.columntypes)
+test.raw <- read.csv("test.csv",colClasses = test.columntypes)
+```
+
+## Combine the data
+Due to the fact that we want to have the same columns to work with we are about to add the missing columns to the test-dataset to join
+it later on with the train dataset.
+
+```{r combining the data}
+test.raw$casual <- NA
+test.raw$registered <- NA
+test.raw$count <- NA
+
+overalldata <- rbind(train.raw, test.raw) # split has to be made on row 10887: end
+```
+## Feature Engineering
+Since we now have our overall data we can begin to add new features to the data.
+
+```{r feature engineering}
+#Convert the datetime into real datetime (german locale)
+library(lubridate)
+overalldata$datetime <- ymd_hms(overalldata$datetime)
+overalldata$ger_datetime <- format(ymd_hms(overalldata$datetime), "%d.%m.%y %H:%M:%S")
+#Feature Engineering
+
+#extract the hour and weekday of the date
+overalldata$hour <- hour(overalldata$datetime)
+overalldata$year <- year(overalldata$datetime)
+overalldata$month <- month(overalldata$datetime)
+overalldata$weekday <- weekdays(overalldata$datetime)
+overalldata$weekday <- as.factor(overalldata$weekday)
+overalldata$combined <- paste(as.character(overalldata$weekday), "_", as.character(overalldata$hour), sep="")
+overalldata$combined <- as.factor(overalldata$combined)
+```
+
+## Split back into train, test and an additional validation set
+ok now we got our additional engineered features we have to split the overall data again in train, validation and test sets.
+
+```{r splitting stuff}
+full_train <- overalldata[1:10886,]
+
+#constructing validation set
+library(caTools)
+set.seed(47533)
+split = sample.split(full_train$count, SplitRatio = 0.75)
+train = subset(full_train, split == TRUE)
+validate = subset(full_train, split == FALSE)
+
+test <- overalldata[10887:nrow(overalldata),]
+```
+## Modeling time
+Now we can model and pick the best model and validate it on our validation set. We first select a model and second build two separate models for casual and registred because the count variable is constructed of it.
+
+```{r modeling}
+library(caret)
+library(randomForest)
+
+lm.model.casual.1 <- train(casual ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + hour + as.factor(weekday), data=train, method="lm")
+
+rpart.model.registered.1 <- train(registered ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + year + month + weekday + hour, data=train, method="rpart")
+
+rf.model.casual.1 <- randomForest(casual ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + year + month + weekday + hour, data=train, method="rpart")
+
+rf.model.registered.1 <- randomForest(registered ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + year + month + weekday + hour, data=train, method="rpart")
+
+gbm.casual.model <- train(casual ~ year + month + hour + weekday + season + holiday + workingday + weather + temp + atemp + humidity, data=train, method="gbm")
+
+gbm.registered.model <- train(casual ~ year + month + hour + weekday + season + holiday + workingday + weather + temp + atemp + humidity, data=train, method="gbm")
+
+#evalute it
+library(qpcR)
+RMSE(gbm.casual.model)
+
+library(Metrics)
+test.predictions <- predict(rf.model.registered.1, newdata=validate)
+rmsle(validate$registered,test.predictions)
+```
+### Conclusion
+#gbm (RMSE = 20.1 with shrinkage = 0,1 n.trees = 150 and interaction.depth = 3)
+1. gbm = 19.73046 (Casual) / 2.935967
+2. lm = 35.33 (casual) / 2.334489
+3. rf = 38.49 (registered) / 0.4335096 <- best rmsle
+4. rpart = 105.59 (registered) / 0.9594557
+
+The winner is gbm!!!
+
+## Predict the future
+We got the best model (gbm) which we picked so lets predict the sharings for the future.
+
+```{r predict the future}
+#build final models (I had to use the log so that i dont get negative values when predicting)
+gbm.casual.model <- train(log(casual +1) ~ year + month + hour + weekday + season + holiday + workingday + weather + temp + atemp + humidity, data=full_train, method="gbm")
+
+gbm.registered.model <- train(log(registered +1) ~ year + month + hour + weekday + season + holiday + workingday + weather + temp + atemp + humidity, data=full_train, method="gbm")
+
+
+#predict test casual and registered and combine it
+casual.predictions <- predict(gbm.casual.model, newdata=test)
+registered.predictions <- predict(gbm.registered.model, newdata=test)
+predictions <- casual.predictions + registered.predictions
+predictions <- exp(predictions)
+summary(predictions)
+hist(train$count)
+hist(predictions)
+################################
+
+# Since gbm predicts negative values and i dont know how to fix this I try it with lm 
+lm.model.casual.1 <- train(log(casual) ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + hour + as.factor(weekday), data=train, method="lm")
+
+lm.model.registered.1 <- train(log(registered) ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + hour + as.factor(weekday), data=train, method="lm")
+
+casual.predictions <- predict(lm.model.casual.1, newdata=test)
+registered.predictions <- predict(lm.model.registered.1, newdata=test)
+predictions <- casual.predictions + registered.predictions
+predictions <- exp(predictions)
+
+summary(predictions)
+
+####################################
+#Random forrest with best rmsle
+rf.model.casual.1 <- randomForest(casual ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + year + month + weekday + hour, data=full_train, method="rpart")
+
+rf.model.registered.1 <- randomForest(registered ~ season + holiday + workingday + weather + temp + atemp + humidity + windspeed + year + month + weekday + hour, data=full_train, method="rpart")
+
+casual.predictions <- predict(rf.model.casual.1, newdata=test)
+registered.predictions <- predict(rf.model.registered.1, newdata=test)
+predictions <- casual.predictions + registered.predictions
+
+#1st try
+predictions.rounded <- round(predictions)
+
+#2nd try
+predictions.ceiling <- ceiling(predictions)
+
+summary(predictions.rounded)
+summary(predictions.ceiling)
+summary(validate$count)
+```
+## Construct submission file
+construct a file for submission
+
+```{r construct the submission file}
+submit <- data.frame(datetime = test$datetime, count = predictions.ceiling)
+write.csv(submit, file = "submission_rf_ceiling.csv", row.names = FALSE)
+```

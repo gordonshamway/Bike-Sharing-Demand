@@ -13,8 +13,7 @@ column.types <- c('factor', #have to correct that later
             'integer',
             'integer')
 
-#test
-#test2
+
 
 train.raw <- read.csv("train.csv",colClasses = column.types)
 
@@ -73,7 +72,7 @@ summary(model_test) #model_test
 
 #check RMSE
 library(qpcR)
-RMSE(glm.model99)
+RMSE(gbm.casual.model)
 
 
 #RMSE
@@ -114,6 +113,8 @@ test.raw$combined <- as.factor(test.raw$combined)
 lm.model.casual.predictions <- predict(gbm.casual.model, newdata = test.raw)
 glm.model3.prediction <- predict(glm.model99, newdata = test.raw)
 rf.model1.predicitions <- predict(rf.model1, newdata = test.raw)
+
+gbm.casual.predictions <- predict(gbm.casual.model, newdata=test.raw)
 
 #prepare the output file
 submit <- data.frame(datetime = test.raw$datetime, count = rf.model1.predicitions)
